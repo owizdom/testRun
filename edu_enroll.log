@@ -1,0 +1,38 @@
+2025-07-05 00:02:12,194 - INFO - Checking for mysql-connector-python
+2025-07-05 00:02:12,196 - ERROR - Unexpected error: [Errno 2] No such file or directory: '/Users/Apple/EduEnroll/venv/Scripts/bin/pip'
+2025-07-05 00:10:41,134 - INFO - Checking for mysql-connector-python
+2025-07-05 00:10:41,136 - ERROR - Unexpected error: [Errno 2] No such file or directory: '/Users/Apple/EduEnroll/venv/Scripts/bin/pip'
+2025-07-05 00:11:35,198 - INFO - Starting environment setup
+2025-07-05 00:11:35,198 - INFO - Virtual environment already exists
+2025-07-05 00:11:35,198 - INFO - Virtual environment activation script set as executable
+2025-07-05 00:11:35,831 - INFO - Upgraded pip in virtual environment
+2025-07-05 00:11:35,980 - INFO - mysql-connector-python already installed
+2025-07-05 00:11:36,008 - INFO - MySQL is installed
+2025-07-05 00:11:36,991 - INFO - MySQL server started
+2025-07-05 00:11:43,636 - ERROR - Failed to create database: 1045 (28000): Access denied for user 'root'@'localhost' (using password: YES)
+2025-07-05 00:11:49,317 - INFO - Starting environment setup
+2025-07-05 00:11:49,317 - INFO - Virtual environment already exists
+2025-07-05 00:11:49,317 - INFO - Virtual environment activation script set as executable
+2025-07-05 00:11:50,110 - INFO - Upgraded pip in virtual environment
+2025-07-05 00:11:50,249 - INFO - mysql-connector-python already installed
+2025-07-05 00:11:50,258 - INFO - MySQL is installed
+2025-07-05 00:11:51,168 - INFO - MySQL server started
+2025-07-05 00:11:51,873 - ERROR - Failed to create database: 1045 (28000): Access denied for user 'root'@'localhost' (using password: NO)
+2025-07-05 00:12:02,768 - INFO - Starting environment setup
+2025-07-05 00:12:02,769 - INFO - Virtual environment already exists
+2025-07-05 00:12:02,769 - INFO - Virtual environment activation script set as executable
+2025-07-05 00:12:03,040 - INFO - mysql-connector-python installed
+2025-07-05 00:12:03,050 - INFO - MySQL is installed
+2025-07-05 00:12:03,939 - INFO - MySQL server started
+2025-07-05 00:12:03,989 - INFO - Database 'student_db' ensured
+2025-07-05 00:12:13,760 - INFO - Connected to database: student_db
+2025-07-05 00:12:39,858 - ERROR - Failed student registration: Gender must be M, F, or Other.
+2025-07-05 00:13:07,862 - INFO - Connected to database: student_db
+2025-07-05 00:13:07,890 - INFO - Student registered: S1006 - john
+2025-07-05 00:13:11,077 - INFO - Connected to database: student_db
+2025-07-05 00:13:16,085 - INFO - Student returned to main menu
+2025-07-05 00:13:30,380 - INFO - Connected to database: student_db
+2025-07-05 00:13:30,386 - INFO - Admin root logged in successfully
+2025-07-05 00:13:34,973 - INFO - Connected to database: student_db
+2025-07-05 00:13:34,976 - INFO - Data exported to students_export_20250705_001334.csv
+2025-07-05 00:13:44,328 - INFO - Program exited normally from admin menu

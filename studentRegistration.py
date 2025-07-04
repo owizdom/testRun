@@ -1,3 +1,5 @@
+import mysql.connector
+import getpass
 import sys
 import re
 import csv
@@ -8,16 +10,6 @@ import os
 import stat
 import venv
 import platform
-import getpass
-
-# Attempt to import mysql-connector-python; will be installed if missing
-try:
-    import mysql.connector
-except ImportError:
-    print("[+] mysql-connector-python not found. Will attempt to install.")
-    mysql = None
-else:
-    mysql = mysql.connector
 
 # Configure logging to track application events and errors
 logging.basicConfig(
@@ -26,147 +18,16 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 
-# MySQL credentials
+# Hardcoded MySQL credentials (replace with your actual credentials or use env variables in production)
 MYSQL_USER = "root"
-MYSQL_PASSWORD = os.getenv('MYSQL_PASSWORD', '')  # Default to empty for fresh installs
+MYSQL_PASSWORD = "BatmanGokuSuper@12"  # REPLACE WITH YOUR MYSQL ROOT PASSWORD
 MYSQL_HOST = "localhost"
 MYSQL_DATABASE = "student_db"
 
-def install_mysql_connector():
-    """
-    Installs mysql-connector-python in the current environment (preferably virtual environment).
-    Runs immediately to ensure the package is available before other setup tasks.
-    """
-    global mysql
-    print("[+] Checking for mysql-connector-python...")
-    logging.info("Checking for mysql-connector-python")
-
-    # Determine pip path (use system pip initially if venv not yet created)
-    pip_path = "pip" if not os.path.exists(os.path.join(os.getcwd(), "venv")) else \
-        os.path.join(os.getcwd(), "venv", "Scripts", "pip.exe" if platform.system() == "Windows" else "bin", "pip")
-
-    # Install or verify mysql-connector-python
-    if mysql is None:
-        print("[+] Installing mysql-connector-python...")
-        try:
-            subprocess.check_call([pip_path, "install", "mysql-connector-python"])
-            print("[+] Installed mysql-connector-python")
-            logging.info("mysql-connector-python installed")
-            import mysql.connector  # Re-import after installation
-            mysql = mysql.connector
-        except subprocess.CalledProcessError as e:
-            print(f"[+] Error installing mysql-connector-python: {e}")
-            logging.error(f"Error installing mysql-connector-python: {e}")
-            sys.exit(1)
-    else:
-        try:
-            subprocess.check_call([pip_path, "show", "mysql-connector-python"])
-            print("[+] mysql-connector-python already installed")
-            logging.info("mysql-connector-python already installed")
-        except subprocess.CalledProcessError:
-            print("[+] Installing mysql-connector-python...")
-            try:
-                subprocess.check_call([pip_path, "install", "mysql-connector-python"])
-                print("[+] Installed mysql-connector-python")
-                logging.info("mysql-connector-python installed")
-                import mysql.connector  # Re-import to be safe
-                mysql = mysql.connector
-            except subprocess.CalledProcessError as e:
-                print(f"[+] Error installing mysql-connector-python: {e}")
-                logging.error(f"Error installing mysql-connector-python: {e}")
-                sys.exit(1)
-
-def check_auth_socket():
-    """
-    Checks if the root user uses auth_socket and prompts to set a password if needed.
-    Returns True if authentication is configured correctly, False otherwise.
-    """
-    global MYSQL_PASSWORD
-    try:
-        # Connect with current credentials to check authentication plugin
-        conn = mysql.connector.connect(
-            host=MYSQL_HOST,
-            user=MYSQL_USER,
-            password=MYSQL_PASSWORD
-        )
-        cursor = conn.cursor()
-        cursor.execute("SELECT user, host, plugin FROM mysql.user WHERE user = %s AND host = %s", (MYSQL_USER, MYSQL_HOST))
-        result = cursor.fetchone()
-        cursor.close()
-        conn.close()
-
-        if result and result[2] == 'auth_socket':
-            print("[+] Detected auth_socket for root user. This is incompatible with mysql-connector-python.")
-            print("[+] Please set a password for root@localhost to use mysql_native_password.")
-            new_password = getpass.getpass("[+] Enter new MySQL root password (must meet policy requirements, e.g., SecurePass123!): ")
-            try:
-                # Use mysqladmin to change password (since we can't use auth_socket here)
-                subprocess.check_call(["mysqladmin", "-u", MYSQL_USER, "password", new_password])
-                MYSQL_PASSWORD = new_password
-                print("[+] Root password set successfully.")
-                logging.info("Root user switched to mysql_native_password with new password")
-                
-                # Verify the change
-                conn = mysql.connector.connect(
-                    host=MYSQL_HOST,
-                    user=MYSQL_USER,
-                    password=MYSQL_PASSWORD
-                )
-                cursor = conn.cursor()
-                cursor.execute("ALTER USER %s@%s IDENTIFIED WITH mysql_native_password BY %s", 
-                              (MYSQL_USER, MYSQL_HOST, MYSQL_PASSWORD))
-                conn.commit()
-                cursor.close()
-                conn.close()
-                return True
-            except (subprocess.CalledProcessError, mysql.connector.Error) as e:
-                print(f"[+] Error setting root password: {e}")
-                print("[+] You may need to run: sudo mysql -e \"ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY 'your_password';\"")
-                logging.error(f"Error setting root password: {e}")
-                return False
-        return True
-    except mysql.connector.Error as err:
-        if err.errno == mysql.connector.errorcode.ER_ACCESS_DENIED_ERROR:
-            print("[+] Default MySQL password failed. Please enter the MySQL root password:")
-            MYSQL_PASSWORD = getpass.getpass("[+] MySQL root password: ")
-            try:
-                conn = mysql.connector.connect(
-                    host=MYSQL_HOST,
-                    user=MYSQL_USER,
-                    password=MYSQL_PASSWORD
-                )
-                cursor = conn.cursor()
-                cursor.execute("SELECT user, host, plugin FROM mysql.user WHERE user = %s AND host = %s", 
-                              (MYSQL_USER, MYSQL_HOST))
-                result = cursor.fetchone()
-                cursor.close()
-                conn.close()
-                if result and result[2] == 'auth_socket':
-                    print("[+] Detected auth_socket. Please set a password for root@localhost.")
-                    new_password = getpass.getpass("[+] Enter new MySQL root password (e.g., SecurePass123!): ")
-                    try:
-                        subprocess.check_call(["mysqladmin", "-u", MYSQL_USER, "-p" + MYSQL_PASSWORD, "password", new_password])
-                        MYSQL_PASSWORD = new_password
-                        print("[+] Root password set successfully.")
-                        logging.info("Root user switched to mysql_native_password with new password")
-                        return True
-                    except subprocess.CalledProcessError as e:
-                        print(f"[+] Error setting root password: {e}")
-                        logging.error(f"Error setting root password: {e}")
-                        return False
-                return True
-            except mysql.connector.Error as err:
-                print(f"[+] Error verifying authentication: {err}")
-                logging.error(f"Error verifying authentication: {err}")
-                return False
-        else:
-            print(f"[+] Error checking authentication: {err}")
-            logging.error(f"Error checking authentication: {err}")
-            return False
-
 def setup_environment():
     """
-    Sets up the virtual environment and ensures MySQL is running after installing mysql-connector-python.
+    Sets up the virtual environment, installs dependencies, and ensures MySQL is running.
+    Creates virtual environment, installs mysql-connector-python, and starts MySQL server if needed.
     """
     print("[+] Setting up environment...")
     logging.info("Starting environment setup")
@@ -181,13 +42,13 @@ def setup_environment():
         print("[+] Virtual environment already exists")
         logging.info("Virtual environment already exists")
 
-    # Determine pip path based on platform
+    # Determine activation script based on platform
     if platform.system() == "Windows":
-        pip_path = os.path.join(venv_dir, "Scripts", "pip.exe")
         activate_script = os.path.join(venv_dir, "Scripts", "activate.bat")
-    else:  # Linux or macOS
-        pip_path = os.path.join(venv_dir, "bin", "pip")
+        pip_path = os.path.join(venv_dir, "Scripts", "pip")
+    else:
         activate_script = os.path.join(venv_dir, "bin", "activate")
+        pip_path = os.path.join(venv_dir, "bin", "pip")
 
     # Ensure activation script is executable (Linux/macOS)
     if platform.system() != "Windows" and os.path.exists(activate_script):
@@ -198,14 +59,15 @@ def setup_environment():
         logging.error("Virtual environment activation script not found")
         sys.exit(1)
 
-    # Ensure pip is upgraded
+    # Install mysql-connector-python
     try:
-        subprocess.check_call([pip_path, "install", "--upgrade", "pip"])
-        print("[+] Upgraded pip in virtual environment")
-        logging.info("Upgraded pip in virtual environment")
+        subprocess.check_call([pip_path, "install", "mysql-connector-python"])
+        print("[+] Installed mysql-connector-python")
+        logging.info("mysql-connector-python installed")
     except subprocess.CalledProcessError as e:
-        print(f"[+] Warning: Failed to upgrade pip: {e}")
-        logging.warning(f"Failed to upgrade pip: {e}")
+        print(f"[+] Error installing mysql-connector-python: {e}")
+        logging.error(f"Error installing mysql-connector-python: {e}")
+        sys.exit(1)
 
     # Check if MySQL is installed
     try:
@@ -213,35 +75,37 @@ def setup_environment():
         print("[+] MySQL is installed")
         logging.info("MySQL is installed")
     except (subprocess.CalledProcessError, FileNotFoundError):
-        print("[+] MySQL not found. Please install MySQL manually:")
-        if platform.system() == "Darwin":
-            print("[+] On macOS, run: brew install mysql")
-        elif platform.system() == "Linux":
-            print("[+] On Linux, run: sudo apt update && sudo apt install -y mysql-server")
-        else:
-            print("[+] On Windows, download and install MySQL from https://dev.mysql.com/downloads/")
-        logging.error("MySQL not found, manual installation required")
-        sys.exit(1)
+        print("[+] MySQL not found. Attempting to install...")
+        logging.warning("MySQL not found, attempting installation")
+        try:
+            if platform.system() == "Linux":
+                subprocess.check_call(["apt", "update"])
+                subprocess.check_call(["apt", "install", "-y", "mysql-server"])
+            elif platform.system() == "Darwin":  # macOS
+                subprocess.check_call(["brew", "install", "mysql"])
+            else:
+                print("[+] Error: MySQL installation not supported on this platform. Please install manually.")
+                logging.error("MySQL installation not supported on this platform")
+                sys.exit(1)
+            print("[+] MySQL installed successfully")
+            logging.info("MySQL installed successfully")
+        except subprocess.CalledProcessError as e:
+            print(f"[+] Error installing MySQL: {e}")
+            logging.error(f"Error installing MySQL: {e}")
+            sys.exit(1)
 
     # Start MySQL server
     try:
-        if platform.system() == "Darwin":  # macOS
-            subprocess.check_call(["brew", "services", "start", "mysql"])
-        elif platform.system() == "Linux":
+        if platform.system() == "Linux":
             subprocess.check_call(["service", "mysql", "start"])
-        else:  # Windows
-            print("[+] On Windows, ensure MySQL is running (e.g., via Services or mysqld)")
+        elif platform.system() == "Darwin":
+            subprocess.check_call(["brew", "services", "start", "mysql"])
         print("[+] MySQL server started")
         logging.info("MySQL server started")
     except subprocess.CalledProcessError as e:
         print(f"[+] Warning: Could not start MySQL automatically: {e}")
         print("[+] MySQL may already be running or requires manual start")
         logging.warning(f"Could not start MySQL: {e}")
-
-    # Check authentication and set password if needed
-    if not check_auth_socket():
-        print("[+] Failed to configure MySQL authentication. Exiting.")
-        sys.exit(1)
 
     # Check if student_db exists, create if not
     try:
@@ -254,46 +118,23 @@ def setup_environment():
         cursor.execute("CREATE DATABASE IF NOT EXISTS student_db")
         print("[+] Database 'student_db' ensured")
         logging.info("Database 'student_db' ensured")
-        
-        # Create tables if they don't exist
-        cursor.execute("USE student_db")
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS students (
-                student_id VARCHAR(10) PRIMARY KEY,
-                name VARCHAR(255) NOT NULL,
-                age INT NOT NULL,
-                gender CHAR(1) NOT NULL,
-                department VARCHAR(100),
-                email VARCHAR(255) NOT NULL,
-                phone VARCHAR(20) NOT NULL,
-                status BOOLEAN DEFAULT TRUE
-            )
-        """)
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS admins (
-                username VARCHAR(50) PRIMARY KEY,
-                password_hash VARCHAR(255) NOT NULL
-            )
-        """)
-        # Insert default admin if not exists
-        cursor.execute("SELECT COUNT(*) FROM admins WHERE username = 'admin'")
-        if cursor.fetchone()[0] == 0:
-            cursor.execute("INSERT INTO admins (username, password_hash) VALUES ('admin', 'admin123')")
-        conn.commit()
-        print("[+] Tables and default admin ensured")
-        logging.info("Tables and default admin ensured")
         cursor.close()
         conn.close()
     except mysql.connector.Error as err:
-        print(f"[+] Error: Failed to create database or tables: {err}")
-        logging.error(f"Failed to create database or tables: {err}")
+        print(f"[+] Error: Failed to create database: {err}")
+        logging.error(f"Failed to create database: {err}")
         sys.exit(1)
 
 def connect_to_database():
     """
-    Establishes a connection to the MySQL database using dynamic credentials.
+    Establishes a connection to the MySQL database using hardcoded credentials.
+
+    Returns:
+        mysql.connector.connection.MySQLConnection: Database connection object.
+
+    Raises:
+        mysql.connector.Error: If connection fails due to incorrect credentials or database setup.
     """
-    global MYSQL_PASSWORD
     try:
         conn = mysql.connector.connect(
             host=MYSQL_HOST,
@@ -304,32 +145,20 @@ def connect_to_database():
         logging.info(f"Connected to database: {MYSQL_DATABASE}")
         return conn
     except mysql.connector.Error as err:
-        if err.errno == mysql.connector.errorcode.ER_ACCESS_DENIED_ERROR:
-            print("[+] Current MySQL password failed. Please enter the MySQL root password:")
-            MYSQL_PASSWORD = getpass.getpass("[+] MySQL root password: ")
-            try:
-                conn = mysql.connector.connect(
-                    host=MYSQL_HOST,
-                    user=MYSQL_USER,
-                    password=MYSQL_PASSWORD,
-                    database=MYSQL_DATABASE
-                )
-                logging.info(f"Connected to database: {MYSQL_DATABASE}")
-                return conn
-            except mysql.connector.Error as err:
-                print(f"[+] Error: Failed to connect to database: {err}")
-                print("[+] Ensure MySQL is running and the database 'student_db' exists.")
-                logging.error(f"Failed to connect to database: {err}")
-                sys.exit(1)
-        else:
-            print(f"[+] Error: Failed to connect to database: {err}")
-            print("[+] Ensure MySQL is running and the database 'student_db' exists.")
-            logging.error(f"Failed to connect to database: {err}")
-            sys.exit(1)
+        print(f"[+] Error: Failed to connect to database: {err}")
+        print("[+] Ensure MySQL is running and the database 'student_db' exists.")
+        print("[+] Run 'setup_database.sql' with your MySQL credentials to create the database and tables.")
+        print(f"[+] Example: mysql -u {MYSQL_USER} -p < setup_database.sql")
+        logging.error(f"Failed to connect to database: {err}")
+        sys.exit(1)
 
 def admin_login():
     """
     Authenticates an admin user by checking username and password against the database.
+    Allows up to 3 login attempts before exiting.
+
+    Returns:
+        bool: True if login is successful, False otherwise.
     """
     max_attempts = 3
     attempts = 0
@@ -368,6 +197,16 @@ def admin_login():
 def validate_student_data(name, age, gender, email, phone):
     """
     Validates student input data to ensure it meets required criteria.
+
+    Args:
+        name (str): Student's full name.
+        age (str): Student's age.
+        gender (str): Student's gender.
+        email (str): Student's email.
+        phone (str): Student's phone number.
+
+    Returns:
+        tuple: (bool, str) - (True if valid, error message if invalid).
     """
     if not name or len(name) < 2:
         return False, "Name must be at least 2 characters."
@@ -388,6 +227,7 @@ def validate_student_data(name, age, gender, email, phone):
 def register_student():
     """
     Registers a new student in the database with validated input.
+    Generates a unique student ID based on the current count of students.
     """
     print("\n[+] Register New Student")
     print("------------------------------------------------------")
@@ -398,6 +238,7 @@ def register_student():
     email = input("[+] Email: ").strip()
     phone = input("[+] Phone Number: ").strip()
 
+    # Validate input data
     is_valid, error = validate_student_data(name, age, gender, email, phone)
     if not is_valid:
         print(f"[+] Error: {error}")
@@ -408,10 +249,12 @@ def register_student():
         conn = connect_to_database()
         cursor = conn.cursor()
 
+        # Generate unique student ID (e.g., S1001)
         cursor.execute("SELECT COUNT(*) FROM students")
         count = cursor.fetchone()[0] + 1
         student_id = f"S{1000 + count}"
 
+        # Insert student data
         cursor.execute(
             """
             INSERT INTO students (student_id, name, age, gender, department, email, phone)
@@ -431,6 +274,7 @@ def register_student():
 def edit_student():
     """
     Allows an admin to edit an existing student's details by searching for their name.
+    Displays matching students, allows selection, and requires confirmation.
     """
     print("\n[+] Edit Student")
     print("------------------------------------------------------")
@@ -465,7 +309,7 @@ def edit_student():
                     return
             except ValueError:
                 print("[+] Error: Please enter a valid number.")
-                logging.warning(f"Invalid input for student selection in edit")
+                logging.warning(f"Invalid input for student selection in edit: {choice}")
                 conn.close()
                 return
         else:
@@ -489,6 +333,7 @@ def edit_student():
         email = input("[+] New Email: ").strip() or selected_student[5]
         phone = input("[+] New Phone Number: ").strip() or selected_student[6]
 
+        # Validate input data
         is_valid, error = validate_student_data(name, age, gender, email, phone)
         if not is_valid:
             print(f"[+] Error: {error}")
@@ -496,6 +341,7 @@ def edit_student():
             conn.close()
             return
 
+        # Update student data
         cursor.execute(
             """
             UPDATE students
@@ -516,6 +362,7 @@ def edit_student():
 def delete_student():
     """
     Allows an admin to mark a student as inactive (soft delete) by searching for their name.
+    Displays matching students, allows selection, and requires confirmation.
     """
     print("\n[+] Delete Student")
     print("------------------------------------------------------")
@@ -550,7 +397,7 @@ def delete_student():
                     return
             except ValueError:
                 print("[+] Error: Please enter a valid number.")
-                logging.warning(f"Invalid input for student selection in delete")
+                logging.warning(f"Invalid input for student selection in delete: {choice}")
                 conn.close()
                 return
         else:
@@ -566,6 +413,7 @@ def delete_student():
             conn.close()
             return
 
+        # Mark student as inactive
         cursor.execute(
             "UPDATE students SET status = FALSE WHERE student_id = %s",
             (student_id,)
@@ -654,6 +502,7 @@ def export_to_csv():
             conn.close()
             return
 
+        # Create timestamped filename
         filename = f"students_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
         with open(filename, 'w', newline='') as file:
             writer = csv.writer(file)
@@ -671,7 +520,7 @@ def export_to_csv():
 
 def show_admin_menu():
     """
-    Displays the command-line interface menu for admin users.
+    Displays the command-line interface menu for admin users with a professional layout.
     """
     print("\n[+] EduEnroll CLI - Admin Menu")
     print("------------------------------------------------------")
@@ -686,7 +535,7 @@ def show_admin_menu():
 
 def show_student_menu():
     """
-    Displays the command-line interface menu for student users.
+    Displays the command-line interface menu for student users with a professional layout.
     """
     print("\n[+] EduEnroll CLI - Student Menu")
     print("------------------------------------------------------")
@@ -700,10 +549,9 @@ def show_student_menu():
 def main():
     """
     Main function to run the EduEnroll CLI application.
+    Sets up environment, displays role selection, and directs to appropriate menu.
     """
-    # Install mysql-connector-python first
-    install_mysql_connector()
-    # Set up environment
+    # Setup environment before running the application
     setup_environment()
 
     while True:
@@ -723,11 +571,13 @@ This project is more than code—it's a testament to our growth, a reflection of
         role_choice = input("[+] Enter choice (1, 2, or 3): ").strip()
 
         if role_choice == "1":
+            # Admin role requires authentication
             if not admin_login():
                 print("[+] Exiting program due to failed login.")
                 logging.error("Program exited due to failed admin login")
                 sys.exit(1)
 
+            # Admin menu loop
             while True:
                 show_admin_menu()
                 choice = input("[+] Enter choice (1-7): ").strip()
@@ -755,6 +605,7 @@ This project is more than code—it's a testament to our growth, a reflection of
                     logging.warning(f"Invalid admin menu choice: {choice}")
 
         elif role_choice == "2":
+            # Student menu loop (no login required)
             while True:
                 show_student_menu()
                 choice = input("[+] Enter choice (1-5): ").strip()
