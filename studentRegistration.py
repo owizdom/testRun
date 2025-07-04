@@ -5,6 +5,11 @@ import re
 import csv
 from datetime import datetime
 import logging
+import subprocess
+import os
+import stat
+import venv
+import platform
 
 # Configure logging to track application events and errors
 logging.basicConfig(
@@ -13,10 +18,145 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 
+# MySQL credentials (password will be determined dynamically)
+MYSQL_USER = "root"
+MYSQL_PASSWORD = os.getenv('MYSQL_PASSWORD', '')  # Try environment variable or empty string
+MYSQL_HOST = "localhost"
+MYSQL_DATABASE = "student_db"
+
+def setup_environment():
+    """
+    Sets up the virtual environment, installs dependencies, and ensures MySQL is running.
+    Creates virtual environment, installs mysql-connector-python, and starts MySQL server if needed.
+    """
+    print("[+] Setting up environment...")
+    logging.info("Starting environment setup")
+
+    # Check and create virtual environment
+    venv_dir = os.path.join(os.getcwd(), "venv")
+    if not os.path.exists(venv_dir):
+        print("[+] Creating virtual environment...")
+        venv.create(venv_dir, with_pip=True)
+        logging.info("Virtual environment created")
+    else:
+        print("[+] Virtual environment already exists")
+        logging.info("Virtual environment already exists")
+
+    # Determine pip path based on platform
+    if platform.system() == "Windows":
+        pip_path = os.path.join(venv_dir, "Scripts", "pip.exe")
+        activate_script = os.path.join(venv_dir, "Scripts", "activate.bat")
+    else:  # macOS or Linux
+        pip_path = os.path.join(venv_dir, "bin", "pip")
+        activate_script = os.path.join(venv_dir, "bin", "activate")
+
+    # Ensure activation script is executable (Linux/macOS)
+    if platform.system() != "Windows" and os.path.exists(activate_script):
+        os.chmod(activate_script, stat.S_IXUSR | stat.S_IRUSR | stat.S_IWUSR)
+        logging.info("Virtual environment activation script set as executable")
+    elif not os.path.exists(activate_script):
+        print("[+] Error: Virtual environment activation script not found")
+        logging.error("Virtual environment activation script not found")
+        sys.exit(1)
+
+    # Ensure pip is upgraded
+    try:
+        subprocess.check_call([pip_path, "install", "--upgrade", "pip"])
+        print("[+] Upgraded pip in virtual environment")
+        logging.info("Upgraded pip in virtual environment")
+    except subprocess.CalledProcessError as e:
+        print(f"[+] Warning: Failed to upgrade pip: {e}")
+        logging.warning(f"Failed to upgrade pip: {e}")
+
+    # Install mysql-connector-python if not already installed
+    try:
+        subprocess.check_call([pip_path, "show", "mysql-connector-python"])
+        print("[+] mysql-connector-python already installed")
+        logging.info("mysql-connector-python already installed")
+    except subprocess.CalledProcessError:
+        print("[+] Installing mysql-connector-python...")
+        try:
+            subprocess.check_call([pip_path, "install", "mysql-connector-python"])
+            print("[+] Installed mysql-connector-python")
+            logging.info("mysql-connector-python installed")
+        except subprocess.CalledProcessError as e:
+            print(f"[+] Error installing mysql-connector-python: {e}")
+            logging.error(f"Error installing mysql-connector-python: {e}")
+            sys.exit(1)
+
+    # Check if MySQL is installed
+    try:
+        subprocess.check_call(["mysql", "--version"])
+        print("[+] MySQL is installed")
+        logging.info("MySQL is installed")
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        print("[+] MySQL not found. Please install MySQL manually:")
+        if platform.system() == "Darwin":
+            print("[+] On macOS, run: brew install mysql")
+        elif platform.system() == "Linux":
+            print("[+] On Linux, run: sudo apt update && sudo apt install -y mysql-server")
+        else:
+            print("[+] On Windows, download and install MySQL from https://dev.mysql.com/downloads/")
+        logging.error("MySQL not found, manual installation required")
+        sys.exit(1)
+
+    # Start MySQL server
+    try:
+        if platform.system() == "Darwin":  # macOS
+            subprocess.check_call(["brew", "services", "start", "mysql"])
+        elif platform.system() == "Linux":
+            subprocess.check_call(["service", "mysql", "start"])
+        else:  # Windows
+            print("[+] On Windows, ensure MySQL is running (e.g., via Services or mysqld)")
+        print("[+] MySQL server started")
+        logging.info("MySQL server started")
+    except subprocess.CalledProcessError as e:
+        print(f"[+] Warning: Could not start MySQL automatically: {e}")
+        print("[+] MySQL may already be running or requires manual start")
+        logging.warning(f"Could not start MySQL: {e}")
+
+    # Check if student_db exists, create if not
+    global MYSQL_PASSWORD
+    try:
+        conn = mysql.connector.connect(
+            host=MYSQL_HOST,
+            user=MYSQL_USER,
+            password=MYSQL_PASSWORD
+        )
+        cursor = conn.cursor()
+        cursor.execute("CREATE DATABASE IF NOT EXISTS student_db")
+        print("[+] Database 'student_db' ensured")
+        logging.info("Database 'student_db' ensured")
+        cursor.close()
+        conn.close()
+    except mysql.connector.Error as err:
+        if err.errno == mysql.connector.errorcode.ER_ACCESS_DENIED_ERROR:
+            print("[+] Default MySQL password failed. Please enter the MySQL root password:")
+            MYSQL_PASSWORD = getpass.getpass("[+] MySQL root password: ")
+            try:
+                conn = mysql.connector.connect(
+                    host=MYSQL_HOST,
+                    user=MYSQL_USER,
+                    password=MYSQL_PASSWORD
+                )
+                cursor = conn.cursor()
+                cursor.execute("CREATE DATABASE IF NOT EXISTS student_db")
+                print("[+] Database 'student_db' ensured")
+                logging.info("Database 'student_db' ensured")
+                cursor.close()
+                conn.close()
+            except mysql.connector.Error as err:
+                print(f"[+] Error: Failed to create database: {err}")
+                logging.error(f"Failed to create database: {err}")
+                sys.exit(1)
+        else:
+            print(f"[+] Error: Failed to create database: {err}")
+            logging.error(f"Failed to create database: {err}")
+            sys.exit(1)
+
 def connect_to_database():
     """
-    Establishes a connection to the MySQL database by prompting for username and password.
-    Uses fixed host='localhost' and database='student_db'.
+    Establishes a connection to the MySQL database using dynamic credentials.
 
     Returns:
         mysql.connector.connection.MySQLConnection: Database connection object.
@@ -24,28 +164,43 @@ def connect_to_database():
     Raises:
         mysql.connector.Error: If connection fails due to incorrect credentials or database setup.
     """
-    print("\n[+] Provide MySQL credentials for database 'student_db':")
-    print("------------------------------------------------------")
-    user = input("[+] MySQL Username (e.g., root): ").strip()
-    password = getpass.getpass("[+] MySQL Password: ")
-
+    global MYSQL_PASSWORD
     try:
         conn = mysql.connector.connect(
-            host='localhost',
-            user=user,
-            password=password,
-            database='student_db'
+            host=MYSQL_HOST,
+            user=MYSQL_USER,
+            password=MYSQL_PASSWORD,
+            database=MYSQL_DATABASE
         )
-        print("[+] Connected to database successfully.")
-        logging.info(f"Connected to database with user: {user}, database: student_db")
+        logging.info(f"Connected to database: {MYSQL_DATABASE}")
         return conn
     except mysql.connector.Error as err:
-        print(f"[+] Error: Failed to connect to database: {err}")
-        print("[+] Ensure MySQL is running and the database 'student_db' exists.")
-        print("[+] Run 'setup_database.sql' with your MySQL credentials to create the database and tables.")
-        print("[+] Example: mysql -u <your_username> -p < setup_database.sql")
-        logging.error(f"Failed to connect with user: {user}, database: student_db, error: {err}")
-        sys.exit(1)
+        if err.errno == mysql.connector.errorcode.ER_ACCESS_DENIED_ERROR:
+            print("[+] Default or stored MySQL password failed. Please enter the MySQL root password:")
+            MYSQL_PASSWORD = getpass.getpass("[+] MySQL root password: ")
+            try:
+                conn = mysql.connector.connect(
+                    host=MYSQL_HOST,
+                    user=MYSQL_USER,
+                    password=MYSQL_PASSWORD,
+                    database=MYSQL_DATABASE
+                )
+                logging.info(f"Connected to database: {MYSQL_DATABASE}")
+                return conn
+            except mysql.connector.Error as err:
+                print(f"[+] Error: Failed to connect to database: {err}")
+                print("[+] Ensure MySQL is running and the database 'student_db' exists.")
+                print("[+] Run 'setup_database.sql' with your MySQL credentials to create the database and tables.")
+                print(f"[+] Example: mysql -u {MYSQL_USER} -p < setup_database.sql")
+                logging.error(f"Failed to connect to database: {err}")
+                sys.exit(1)
+        else:
+            print(f"[+] Error: Failed to connect to database: {err}")
+            print("[+] Ensure MySQL is running and the database 'student_db' exists.")
+            print("[+] Run 'setup_database.sql' with your MySQL credentials to create the database and tables.")
+            print(f"[+] Example: mysql -u {MYSQL_USER} -p < setup_database.sql")
+            logging.error(f"Failed to connect to database: {err}")
+            sys.exit(1)
 
 def admin_login():
     """
@@ -204,7 +359,7 @@ def edit_student():
                     return
             except ValueError:
                 print("[+] Error: Please enter a valid number.")
-                logging.warning(f"Invalid input for student selection in edit: {choice}")
+                logging.warning(f"Invalid input for student selection in edit")
                 conn.close()
                 return
         else:
@@ -292,7 +447,7 @@ def delete_student():
                     return
             except ValueError:
                 print("[+] Error: Please enter a valid number.")
-                logging.warning(f"Invalid input for student selection in delete: {choice}")
+                logging.warning(f"Invalid input for student selection in delete")
                 conn.close()
                 return
         else:
@@ -444,9 +599,11 @@ def show_student_menu():
 def main():
     """
     Main function to run the EduEnroll CLI application.
-    Displays initial role selection prompt and directs to appropriate role-based menu.
-    Allows returning to this menu from Admin or Student menus.
+    Sets up environment, displays role selection, and directs to appropriate menu.
     """
+    # Setup environment before running the application
+    setup_environment()
+
     while True:
         print("\n[+] EduEnroll CLI")
         print("------------------------------------------------------")
