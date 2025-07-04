@@ -15,24 +15,53 @@ logging.basicConfig(
 
 def connect_to_database():
     """
-    Establishes a connection to the MySQL database using provided credentials.
+    Establishes a connection to the MySQL database, prompting for credentials if the default fails.
 
     Returns:
         mysql.connector.connection.MySQLConnection: Database connection object.
 
     Raises:
-        mysql.connector.Error: If connection fails due to invalid credentials or server issues.
+        mysql.connector.Error: If all connection attempts fail.
     """
+    # Default credentials (works for your setup)
+    default_config = {
+        'host': 'localhost',
+        'user': 'root',
+        'password': 'BatmanGokuSuper@12',
+        'database': 'student_db'
+    }
+
+    # Try default connection first
     try:
-        return mysql.connector.connect(
-            host="localhost",
-            user="root",
-            password="BatmanGokuSuper@12",
-            database="student_db"
-        )
+        conn = mysql.connector.connect(**default_config)
+        print("[+] Connected to database using default credentials.")
+        logging.info("Connected to database using default credentials")
+        return conn
     except mysql.connector.Error as err:
-        logging.error(f"Database connection failed: {err}")
-        print(f"[+] Error: Failed to connect to database: {err}")
+        print(f"[+] Default connection failed: {err}")
+        logging.warning(f"Default database connection failed: {err}")
+
+    # Prompt for custom credentials
+    print("\n[+] Default database connection failed. Please provide MySQL credentials:")
+    print("------------------------------------------------------")
+    host = input("[+] MySQL Host (default: localhost): ").strip() or 'localhost'
+    user = input("[+] MySQL Username (e.g., root): ").strip()
+    password = getpass.getpass("[+] MySQL Password: ")
+    database = input("[+] Database Name (e.g., student_db): ").strip()
+
+    try:
+        conn = mysql.connector.connect(
+            host=host,
+            user=user,
+            password=password,
+            database=database
+        )
+        print("[+] Connected to database successfully.")
+        logging.info(f"Connected to database with user: {user}, database: {database}")
+        return conn
+    except mysql.connector.Error as err:
+        print(f"[+] Error: Failed to connect to database with provided credentials: {err}")
+        logging.error(f"Failed to connect with user: {user}, database: {database}, error: {err}")
         sys.exit(1)
 
 def admin_login():
@@ -441,6 +470,7 @@ def main():
         print("EduEnroll is a command-line interface for student registration and management created by Group 11")
         print("------------------------------------------------------")
         print("""
+
 This project is more than code—it's a testament to our growth, a reflection of our dreams, and a step toward changing the world, one solution at a time.
 ------------------------------------------------------
 """)
